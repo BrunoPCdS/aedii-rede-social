@@ -1,15 +1,14 @@
-# padrão aedlib 2.6
-"""[SOCIAL-26] Interface de linha de comando para as consultas da rede social."""
+"""Interface de linha de comando para as consultas da rede social."""
 
 import json
 import sys
 from datetime import date
 
-from aedlib import social_carregar_dados
+from aedlib import carregar_dados
 from .aplicacao import AplicacaoRedeSocial
 
 
-AJUDA = """Uso: python py/social_main.py COMANDO [ARGUMENTOS] [--json]
+AJUDA = """Uso: python py/main.py COMANDO [ARGUMENTOS] [--json]
 Comandos:
   buscar @usuario
   sugerir @usuario k
@@ -17,15 +16,16 @@ Comandos:
   posts-entre AAAA-MM-DD AAAA-MM-DD
   top-seguidos k
   top-curtidos k
-  ranking [limite]
+  ranking [--limite N]
 Exemplos:
-  python py/social_main.py buscar @henrique_nascimento
-  python py/social_main.py sugerir @henrique_nascimento 5 --json
+  python py/main.py buscar @henrique_nascimento
+  python py/main.py sugerir @henrique_nascimento 5 --json
+  python py/main.py ranking --limite 20
 """
 
 
-def social_validar_data(texto):
-    """[SOCIAL-26] Valida data ISO e retorna o texto comparável AAAA-MM-DD."""
+def validar_data(texto):
+    """Valida data ISO e retorna o texto comparável AAAA-MM-DD."""
     if len(texto) != 10 or texto[4] != "-" or texto[7] != "-":
         raise ValueError("Data inválida; use AAAA-MM-DD.")
     try:
@@ -35,8 +35,8 @@ def social_validar_data(texto):
     return texto
 
 
-def social_inteiro_positivo(texto, nome):
-    """[SOCIAL-26] Converte limite não negativo ou gera erro compreensível."""
+def converter_inteiro(texto, nome):
+    """Converte limite não negativo ou gera erro compreensível."""
     try:
         valor = int(texto)
     except ValueError as erro:
@@ -46,38 +46,46 @@ def social_inteiro_positivo(texto, nome):
     return valor
 
 
-def social_executar(argumentos):
-    """[SOCIAL-26] Valida argumentos e executa uma consulta; retorna dados simples."""
+def executar_comando(argumentos):
+    """Valida argumentos e executa uma consulta; retorna dados simples."""
     json_saida = "--json" in argumentos
     argumentos = [item for item in argumentos if item != "--json"]
     if not argumentos or argumentos[0] in ("ajuda", "--help", "-h"):
         print(AJUDA)
         return 0
 
-    usuarios, conexoes, posts = social_carregar_dados()
+    usuarios, conexoes, posts = carregar_dados()
     app = AplicacaoRedeSocial(usuarios, conexoes, posts)
     comando = argumentos[0].lower()
     parametros = argumentos[1:]
 
     if comando == "buscar" and len(parametros) == 1:
-        resultado = app.social_buscar(parametros[0])
+        resultado = app.buscar_usuario(parametros[0])
         if resultado is None:
             raise ValueError("Usuário não encontrado: " + parametros[0])
     elif comando == "sugerir" and len(parametros) == 2:
-        resultado = app.social_sugerir(parametros[0], social_inteiro_positivo(parametros[1], "k"))
+        resultado = app.sugerir_usuarios(parametros[0], converter_inteiro(parametros[1], "k"))
     elif comando == "comunidades" and not parametros:
-        resultado = app.social_comunidades()
+        resultado = app.listar_comunidades()
     elif comando == "posts-entre" and len(parametros) == 2:
-        inicio = social_validar_data(parametros[0])
-        fim = social_validar_data(parametros[1])
-        resultado = app.social_posts_entre(inicio, fim)
+        inicio = validar_data(parametros[0])
+        fim = validar_data(parametros[1])
+        resultado = app.buscar_posts_por_periodo(inicio, fim)
     elif comando == "top-seguidos" and len(parametros) == 1:
-        resultado = app.social_top_seguidos(social_inteiro_positivo(parametros[0], "k"))
+        resultado = app.listar_mais_seguidos(converter_inteiro(parametros[0], "k"))
     elif comando == "top-curtidos" and len(parametros) == 1:
-        resultado = app.social_top_curtidos(social_inteiro_positivo(parametros[0], "k"))
-    elif comando == "ranking" and len(parametros) <= 1:
-        limite = social_inteiro_positivo(parametros[0], "limite") if parametros else 20
-        resultado = app.social_ranking(limite)
+        resultado = app.listar_posts_mais_curtidos(converter_inteiro(parametros[0], "k"))
+    elif comando == "ranking":
+        if not parametros:
+            limite = 20
+        elif len(parametros) == 2 and parametros[0] == "--limite":
+            limite = converter_inteiro(parametros[1], "limite")
+        elif len(parametros) == 1:
+            limite = converter_inteiro(parametros[0], "limite")
+        else:
+            print(AJUDA, file=sys.stderr)
+            raise ValueError("Use ranking ou ranking --limite N.")
+        resultado = app.gerar_ranking(limite)
     else:
         print(AJUDA, file=sys.stderr)
         raise ValueError("Comando ou quantidade de parâmetros inválida.")
@@ -89,10 +97,10 @@ def social_executar(argumentos):
     return 0
 
 
-def social_main():
-    """[SOCIAL-26] Executa a CLI e converte erros de entrada em status 1."""
+def iniciar_interface():
+    """Executa a CLI e converte erros de entrada em status 1."""
     try:
-        return social_executar(sys.argv[1:])
+        return executar_comando(sys.argv[1:])
     except ValueError as erro:
         print("Erro: " + str(erro), file=sys.stderr)
         return 1
